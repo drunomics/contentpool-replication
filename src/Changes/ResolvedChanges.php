@@ -20,16 +20,10 @@ class ResolvedChanges extends Changes {
       ->getRange($this->since, $this->stop);
 
     // Setup filter plugin.
-    $parameters = is_array($this->parameters) ? $this->parameters : [];
-    $filter = NULL;
-    if (is_string($this->filter) && $this->filter) {
-      $filter = $this->filterManager->createInstance($this->filter, $parameters);
-    }
-    // If UUIDs are sent as a parameter, but no filter is set, automatically
-    // select the "uuid" filter.
-    elseif (isset($parameters['uuids'])) {
-      $filter = $this->filterManager->createInstance('uuid', $parameters);
-    }
+    // We always apply the default contentpool filter.
+    $filter = $this->filterManager->createInstance('contentpool', [
+      'types' => ['node.article', 'taxonomy_term.channel']
+    ]);
 
     // Format the result array.
     $changes = [];
