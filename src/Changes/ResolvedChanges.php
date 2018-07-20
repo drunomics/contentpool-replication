@@ -20,10 +20,9 @@ class ResolvedChanges extends Changes {
       ->getRange($this->since, $this->stop);
 
     // Setup filter plugin.
-    // We always apply the default contentpool filter.
-    $filter = $this->filterManager->createInstance('contentpool', [
-      'types' => ['node.article', 'taxonomy_term.channel']
-    ]);
+    // We always apply the default replication settings..
+    $replication_settings = $this->entityTypeManager->getStorage('replication_settings')->load('contentpool');
+    $filter = $this->filterManager->createInstance($replication_settings->getFilterId(), $replication_settings->getParameters());
 
     // Format the result array.
     $changes = [];
@@ -76,8 +75,13 @@ class ResolvedChanges extends Changes {
       foreach ($entities as $entity) {
         $uuid = $entity->uuid();
         if (!isset($changes[$uuid])) {
-          $count++;
-          $changes[$uuid] = $this->buildAdditionalChangeRecord($entity);
+          // We look for the sequence in the unfiltered sequences.
+          $sequence_id = array_search($uuid, array_column($sequences, 'entity_uuid'));
+
+          if ($sequence_id !== NULL) {
+            $count++;
+            $changes[$uuid] = $this->buildChangeRecord($sequences[$sequence_id], $entity);
+          }
         }
       }
     }
@@ -99,10 +103,8 @@ class ResolvedChanges extends Changes {
         ['rev' => $sequence['rev']],
       ],
       'id' => $uuid,
+      'seq' => $sequence['seq'],
     ];
-    if (isset($sequence['seq'])) {
-      $change_record['seq'] = $sequence['seq'];
-    }
     if ($sequence['deleted']) {
       $change_record['deleted'] = TRUE;
     }
@@ -113,18 +115,6 @@ class ResolvedChanges extends Changes {
     }
 
     return $change_record;
-  }
-
-  protected function buildAdditionalChangeRecord(ContentEntityInterface $entity) {
-    // We build a slim version of the sequence built in SequenceIndex.
-    // We omit the sequence id ('seq') here.
-    $sequence = [
-      'entity_uuid' => $entity->uuid(),
-      'rev' => $entity->_rev->value,
-      'deleted' => $entity->_deleted->value,
-    ];
-
-    return $this->buildChangeRecord($sequence, $entity);
   }
 
   /**
