@@ -148,10 +148,6 @@ class ResolvedChanges extends Changes {
             continue;
           }
 
-          if ($entity->bundle() == 'article') {
-            $test = 'DEBUG';
-          }
-
           // If the target entity type is fieldable we have to check it.
           if ($target_entity_type->entityClassImplements("\Drupal\Core\Entity\ContentEntityInterface")) {
             // We only add entry if entity available.
