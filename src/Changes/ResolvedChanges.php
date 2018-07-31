@@ -19,39 +19,24 @@ class ResolvedChanges extends Changes {
       ->useWorkspace($this->workspaceId)
       ->getRange($this->since, $this->stop);
 
-    // Setup filter plugin.
-    // We always apply the default replication settings..
-    $replication_settings = $this->entityTypeManager->getStorage('replication_settings')->load('contentpool');
-    $filter = $this->filterManager->createInstance($replication_settings->getFilterId(), $replication_settings->getParameters());
+    // Removes sequences that shouldn't be processed.
+    $sequences = $this->preFilterSequences($sequences, $this->since);
 
-    // Format the result array.
+    $filter = $this->getFilter();
+    if ($this->includeDocs == TRUE || $filter !== NULL) {
+      // If we need to apply a filter or include docs, we populate the entities.
+      $sequences = $this->populateSequenceRevisions($sequences);
+    }
+
+    // Apply the filter to the sequences.
+    $sequences = $this->filterSequences($sequences, $filter);
+
+    // We build the change records for the sequences.
     $changes = [];
     $count = 0;
     // The entities that changes may depend on.
     $additional_changes = [];
     foreach ($sequences as $sequence) {
-      if (!empty($sequence['local']) || !empty($sequence['is_stub'])) {
-        continue;
-      }
-
-      // When we have the since parameter set, we should exclude the value with
-      // that sequence from the results.
-      if ($this->since > 0 && $sequence['seq'] == $this->since) {
-       continue;
-      }
-
-      // We always get the dodcument for further resolving the dependencies.
-      /** @var \Drupal\multiversion\Entity\Storage\ContentEntityStorageInterface $storage */
-      $storage = $this->entityTypeManager->getStorage($sequence['entity_type_id']);
-      $storage->useWorkspace($this->workspaceId);
-      $revision = $storage->loadRevision($sequence['revision_id']);
-      $storage->useWorkspace(NULL);
-
-      // Filter the document.
-      if ($revision && $filter !== NULL && !$filter->filter($revision)) {
-        continue;
-      }
-
       if ($this->limit && $count >= $this->limit) {
         break;
       }
@@ -61,11 +46,11 @@ class ResolvedChanges extends Changes {
         $count++;
       }
 
-      $changes[$uuid] = $this->buildChangeRecord($sequence, $revision);
+      $changes[$uuid] = $this->buildChangeRecord($sequence);
 
       // Add additional documents based on references.
-      if ($revision && $revision instanceof ContentEntityInterface) {
-        $additional_changes = $this->addEntityFieldReferences($revision, $additional_changes);
+      if ($sequence['revision'] && $sequence['revision'] instanceof ContentEntityInterface) {
+        $additional_changes = $this->addEntityFieldReferences($sequence['revision'], $additional_changes);
       }
     }
 
@@ -78,8 +63,7 @@ class ResolvedChanges extends Changes {
           // We look for the sequence in the unfiltered sequences.
           $sequence_id = array_search($uuid, array_column($sequences, 'entity_uuid'));
 
-          if ($sequence_id !== NULL) {
-            $count++;
+          if ($sequence_id) {
             $changes[$uuid] = $this->buildChangeRecord($sequences[$sequence_id], $entity);
           }
         }
@@ -96,25 +80,13 @@ class ResolvedChanges extends Changes {
     return $return;
   }
 
-  protected function buildChangeRecord($sequence, $entity) {
-    $uuid = $sequence['entity_uuid'];
-    $change_record = [
-      'changes' => [
-        ['rev' => $sequence['rev']],
-      ],
-      'id' => $uuid,
-      'seq' => $sequence['seq'],
-    ];
-    if ($sequence['deleted']) {
-      $change_record['deleted'] = TRUE;
-    }
-
-    // Include the document.
-    if ($this->includeDocs == TRUE) {
-      $change_record['doc'] = $this->serializer->normalize($entity);
-    }
-
-    return $change_record;
+  /**
+   * {@inheritdoc}
+   */
+  protected function getFilter() {
+    // We always apply the default replication settings..
+    $replication_settings = $this->entityTypeManager->getStorage('replication_settings')->load('contentpool');
+    return $this->filterManager->createInstance($replication_settings->getFilterId(), $replication_settings->getParameters());
   }
 
   /**
@@ -124,7 +96,7 @@ class ResolvedChanges extends Changes {
    */
   protected function addEntityFieldReferences(ContentEntityInterface $entity, $additional_changes) {
     // We filter certain base fields.
-    $prohibited_field_ids = ['type', 'uid', 'revision_uid'];
+    $prohibited_field_ids = ['type', 'uid', 'revision_uid', 'vid', 'parent'];
     $field_definitions = array_filter($entity->getFieldDefinitions(), function($key) use ($prohibited_field_ids) {
       return !in_array($key, $prohibited_field_ids);
     }, ARRAY_FILTER_USE_KEY);
