@@ -32,28 +32,32 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
    * {@inheritdoc}
    */
   public function filter(EntityInterface $entity) {
-    if(parent::filter($entity)) {
+    if (parent::filter($entity)) {
       $configuration = $this->getConfiguration();
       $channels = $configuration['channels'];
       $topics = $configuration['topics'];
 
-      // If the entity doesn't have a channel field we don't bother with it here.
+      // If the entity doesn't have a channel field
+      // we don't bother with it here.
       if (!$entity->hasField('field_channel') && !$entity->hasField('field_topic')) {
         return TRUE;
       }
 
-      // If basically available in the channel we optionally check for the topic.
+      // If basically available in the channel
+      // we optionally check for the topic.
       if ($channels && $entity->hasField('field_channel') && !$entity->field_channel->isEmpty()) {
         // We add the child terms to the channels.
         $channels = array_merge($channels, $this->getChildTerms($channels, 'channel'));
         $channel_uuid = $entity->field_channel->entity->uuid();
-        // If the remote doesn't reference the entities channel, we'll filter it.
+        // If the remote doesn't reference the entities channel,
+        // we'll filter it.
         if (in_array($channel_uuid, array_keys($channels))) {
           return TRUE;
         }
       }
 
-      // If basically available in the channel we optionally check for the topic.
+      // If basically available in the channel
+      // we optionally check for the topic.
       if ($topics && $entity->hasField('field_topic') && !$entity->field_topic->isEmpty()) {
         // We add the child terms to the topics..
         $topics = array_merge($topics, $this->getChildTerms($topics, 'topics'));
@@ -71,10 +75,12 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
   /**
    * Gets an array of term uuids that are children of the specified terms.
    *
-   * @param $terms
-   * @param $vocabulary_id
+   * @param array $terms
+   *   An array of taxonomy term uuids.
+   * @param string $vocabulary_id
+   *   The vocabulary id.
    */
-  protected function getChildTerms($terms, $vocabulary_id) {
+  protected function getChildTerms(array $terms, $vocabulary_id) {
     $child_terms = [];
     foreach ($terms as $term_uuid) {
       // We need the taxonomy term object for the local id.
