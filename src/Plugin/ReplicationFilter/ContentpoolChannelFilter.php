@@ -37,7 +37,7 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
       $channels = $configuration['channels'];
 
       // If the entity has a channel field and it is not empty.
-      if ($entity->hasField('field_channel') && !$entity->field_channel->isEmpty()) {
+      if ($channels && $entity->hasField('field_channel') && !$entity->field_channel->isEmpty()) {
         $uuid = $entity->field_channel->entity->uuid();
 
         // If the entity references a channel that is specified in the remote
