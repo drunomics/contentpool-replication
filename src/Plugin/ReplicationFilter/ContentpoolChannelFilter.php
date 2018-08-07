@@ -35,14 +35,27 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
     if(parent::filter($entity)) {
       $configuration = $this->getConfiguration();
       $channels = $configuration['channels'];
+      $topics = $configuration['topics'];
 
-      // If the entity has a channel field and it is not empty.
+      // If the entity doesn't have a channel field we don't bother with it here.
+      if (!$entity->hasField('field_channel') && !$entity->hasField('field_topic')) {
+        return TRUE;
+      }
+
+      // If basically available in the channel we optionally check for the topic.
       if ($channels && $entity->hasField('field_channel') && !$entity->field_channel->isEmpty()) {
-        $uuid = $entity->field_channel->entity->uuid();
+        $channel_uuid = $entity->field_channel->entity->uuid();
+        // If the remote doesn't reference the entities channel, we'll filter it.
+        if (in_array($channel_uuid, array_keys($channels))) {
+          return TRUE;
+        }
+      }
 
-        // If the entity references a channel that is specified in the remote
-        // settings we allow it.
-        if (in_array($uuid, array_keys($channels))) {
+      // If basically available in the channel we optionally check for the topic.
+      if ($topics && $entity->hasField('field_topic') && !$entity->field_topic->isEmpty()) {
+        $topic_uuid = $entity->field_topic->entity->uuid();
+        // If the remote doesn't reference the entities topic, we'll filter it.
+        if (in_array($topic_uuid, array_keys($topics))) {
           return TRUE;
         }
       }
