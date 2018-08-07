@@ -1,0 +1,136 @@
+<?php
+
+namespace Drupal\contentpool_replication\Changes;
+
+use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\replication\Changes\Changes;
+
+/**
+ * {@inheritdoc}
+ */
+class ResolvedChanges extends Changes {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getNormal() {
+    $sequences = $this->sequenceIndex
+      ->useWorkspace($this->workspaceId)
+      ->getRange($this->since, $this->stop);
+
+    // Removes sequences that shouldn't be processed.
+    $sequences = $this->preFilterSequences($sequences, $this->since);
+
+    $filter = $this->getFilter();
+    if ($this->includeDocs == TRUE || $filter !== NULL) {
+      // If we need to apply a filter or include docs, we populate the entities.
+      $sequences = $this->populateSequenceRevisions($sequences);
+    }
+
+    // Apply the filter to the sequences.
+    $sequences = $this->filterSequences($sequences, $filter);
+
+    // We build the change records for the sequences.
+    $changes = [];
+    $count = 0;
+    // The entities that changes may depend on.
+    $additional_changes = [];
+    foreach ($sequences as $sequence) {
+      if ($this->limit && $count >= $this->limit) {
+        break;
+      }
+
+      $uuid = $sequence['entity_uuid'];
+      if (!isset($changes[$uuid])) {
+        $count++;
+      }
+
+      $changes[$uuid] = $this->buildChangeRecord($sequence);
+
+      // Add additional documents based on references.
+      if ($sequence['revision'] && $sequence['revision'] instanceof ContentEntityInterface) {
+        $additional_changes = $this->addEntityFieldReferences($sequence['revision'], $additional_changes);
+      }
+    }
+
+    // Add the additional changes to the main array.
+    foreach ($additional_changes as $entity_type_id => $entities) {
+      /** @var ContentEntityInterface $entity */
+      foreach ($entities as $entity) {
+        $uuid = $entity->uuid();
+        if (!isset($changes[$uuid])) {
+          // We look for the sequence in the unfiltered sequences.
+          $sequence_id = array_search($uuid, array_column($sequences, 'entity_uuid'));
+
+          if ($sequence_id) {
+            $changes[$uuid] = $this->buildChangeRecord($sequences[$sequence_id], $entity);
+          }
+        }
+      }
+    }
+
+    // Now when we have rebuilt the result array we need to ensure that the
+    // results array is still sorted on the sequence key, as in the index.
+    $return = array_values($changes);
+    usort($return, function($a, $b) {
+      return $a['seq'] - $b['seq'];
+    });
+
+    return $return;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function getFilter() {
+    // We always apply the default replication settings..
+    $replication_settings = $this->entityTypeManager->getStorage('replication_settings')->load('contentpool');
+    return $this->filterManager->createInstance($replication_settings->getFilterId(), $replication_settings->getParameters());
+  }
+
+  /**
+   * Returns the ids of all hierarchically referenced entities.
+   *
+   * @param $entity
+   */
+  protected function addEntityFieldReferences(ContentEntityInterface $entity, $additional_changes) {
+    // We filter certain base fields.
+    $prohibited_field_ids = ['type', 'uid', 'revision_uid', 'vid', 'parent'];
+    $field_definitions = array_filter($entity->getFieldDefinitions(), function($key) use ($prohibited_field_ids) {
+      return !in_array($key, $prohibited_field_ids);
+    }, ARRAY_FILTER_USE_KEY);
+
+    foreach ($field_definitions as $key => $field_definition) {
+      if ($field_definition->getType() == 'entity_reference') {
+        if (!$entity->{$key}->isEmpty()) {
+          // Add the referenced entity itself.
+          $referenced_entity_id = $entity->{$key}->target_id;
+
+          if (array_key_exists($referenced_entity_id, $additional_changes)) {
+            // We already resolved the entity in another field.
+            continue;
+          }
+
+          // Determine if the referenced entity has to be checked too.
+          /** @var EntityInterface $target_entity */
+          $target_entity = $entity->{$key}->entity;
+          $target_entity_type = $target_entity->getEntityType();
+          if (!$target_entity) {
+            continue;
+          }
+
+          // If the target entity type is fieldable we have to check it.
+          if ($target_entity_type->entityClassImplements("\Drupal\Core\Entity\ContentEntityInterface")) {
+            // We only add entry if entity available.
+            $additional_changes[$target_entity_type->id()][$referenced_entity_id] = $target_entity;
+            $additional_changes = $this->addEntityFieldReferences($target_entity, $additional_changes);
+          }
+        }
+      }
+    }
+
+    return $additional_changes;
+  }
+
+}
