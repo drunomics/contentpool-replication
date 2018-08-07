@@ -44,6 +44,8 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
 
       // If basically available in the channel we optionally check for the topic.
       if ($channels && $entity->hasField('field_channel') && !$entity->field_channel->isEmpty()) {
+        // We add the child terms to the channels.
+        $channels = array_merge($channels, $this->getChildTerms($channels, 'channel'));
         $channel_uuid = $entity->field_channel->entity->uuid();
         // If the remote doesn't reference the entities channel, we'll filter it.
         if (in_array($channel_uuid, array_keys($channels))) {
@@ -53,6 +55,8 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
 
       // If basically available in the channel we optionally check for the topic.
       if ($topics && $entity->hasField('field_topic') && !$entity->field_topic->isEmpty()) {
+        // We add the child terms to the topics..
+        $topics = array_merge($topics, $this->getChildTerms($topics, 'topics'));
         $topic_uuid = $entity->field_topic->entity->uuid();
         // If the remote doesn't reference the entities topic, we'll filter it.
         if (in_array($topic_uuid, array_keys($topics))) {
@@ -62,6 +66,31 @@ class ContentpoolChannelFilter extends EntityTypeFilter {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets an array of term uuids that are children of the specified terms.
+   *
+   * @param $terms
+   * @param $vocabulary_id
+   */
+  protected function getChildTerms($terms, $vocabulary_id) {
+    $child_terms = [];
+    foreach ($terms as $term_uuid) {
+      // We need the taxonomy term object for the local id.
+      $found_channels = \Drupal::entityTypeManager()->getStorage('taxonomy_term')->loadByProperties(['uuid' => $term_uuid]);
+
+      // If we found one  we get all children and add their uuids.
+      if (!empty($found_channels)) {
+        $children = \Drupal::entityTypeManager()->getStorage('taxonomy_term')->loadTree($vocabulary_id, reset(array_keys($found_channels)), NULL, TRUE);
+
+        foreach ($children as $child) {
+          $child_terms[$child->uuid()] = $child->uuid();
+        }
+      }
+    }
+
+    return $child_terms;
   }
 
 }
