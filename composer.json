@@ -20,12 +20,13 @@
       "dev-8.x-1.x": "1.0.x-dev"
     },
     "patches": {
-      "drunomics/contentpool_replication": {
+      "drupal/replication": {
         "#2989572: Refactor Changes class to be more modular": "https://www.drupal.org/files/issues/2018-07-31/refactor-changes-2989572-2.patch"
       }
     }
   },
   "require": {
+        "drupal/replication": "^1.0@beta"
   },
   "require-dev": {
   }
