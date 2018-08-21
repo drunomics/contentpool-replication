@@ -20,12 +20,12 @@ class ResolvedChanges extends Changes {
       ->getRange($this->since, $this->stop);
 
     // Removes sequences that shouldn't be processed.
-    $sequences = $this->preFilterSequences($sequences, $this->since);
+    $all_sequences = $sequences = $this->preFilterSequences($sequences, $this->since);
 
     $filter = $this->getFilter();
     if ($this->includeDocs == TRUE || $filter !== NULL) {
       // If we need to apply a filter or include docs, we populate the entities.
-      $sequences = $this->populateSequenceRevisions($sequences);
+      $all_sequences = $sequences = $this->populateSequenceRevisions($sequences);
     }
 
     // Apply the filter to the sequences.
@@ -61,10 +61,10 @@ class ResolvedChanges extends Changes {
         $uuid = $entity->uuid();
         if (!isset($changes[$uuid])) {
           // We look for the sequence in the unfiltered sequences.
-          $sequence_id = array_search($uuid, array_column($sequences, 'entity_uuid'));
+          $sequence_id = array_search($uuid, array_column($all_sequences, 'entity_uuid'));
 
           if ($sequence_id) {
-            $changes[$uuid] = $this->buildChangeRecord($sequences[$sequence_id], $entity);
+            $changes[$uuid] = $this->buildChangeRecord($all_sequences[$sequence_id], $entity);
           }
         }
       }
