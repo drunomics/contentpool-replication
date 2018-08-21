@@ -64,8 +64,17 @@ class ResolvedChanges extends Changes {
           $sequence_id = array_search($uuid, array_column($all_sequences, 'entity_uuid'));
 
           if ($sequence_id) {
-            $changes[$uuid] = $this->buildChangeRecord($all_sequences[$sequence_id], $entity);
+            // The sequence is already in range.
+            $additional_sequence = $all_sequences[$sequence_id];
           }
+          else {
+            // We add a new sequence for the non-existing entity.
+            $this->sequenceIndex->add($entity);
+            $new_sequences = $this->sequenceIndex->getRange($this->sequenceIndex->getLastSequenceId(), NULL, TRUE);
+            $additional_sequence = reset($new_sequences);
+          }
+
+          $changes[$uuid] = $this->buildChangeRecord($additional_sequence, $entity);
         }
       }
     }
