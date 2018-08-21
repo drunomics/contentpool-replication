@@ -81,15 +81,6 @@ class ResolvedChanges extends Changes {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  protected function getFilter() {
-    // We always apply the default replication settings..
-    $replication_settings = $this->entityTypeManager->getStorage('replication_settings')->load('contentpool');
-    return $this->filterManager->createInstance($replication_settings->getFilterId(), $replication_settings->getParameters());
-  }
-
-  /**
    * Returns the ids of all hierarchically referenced entities.
    *
    * @param $entity
