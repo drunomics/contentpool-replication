@@ -2,6 +2,7 @@
 
 namespace Drupal\contentpool_replication\Plugin\ReplicationFilter;
 
+use drunomics\ServiceUtils\Core\Entity\EntityTypeManagerTrait;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\replication\Plugin\ReplicationFilter\EntityTypeFilter;
@@ -19,6 +20,15 @@ use Drupal\replication\Plugin\ReplicationFilter\EntityTypeFilter;
  * )
  */
 class ContentpoolFilter extends EntityTypeFilter {
+
+  use EntityTypeManagerTrait;
+
+  /**
+   * Static cache of matching UUIDS.
+   *
+   * @var array
+   */
+  protected $matchingIds = [];
 
   /**
    * {@inheritdoc}
@@ -48,7 +58,6 @@ class ContentpoolFilter extends EntityTypeFilter {
    * {@inheritdoc}
    */
   public function filter(EntityInterface $entity) {
-    \Drupal::logger('contentpool')->info('filter here' . var_export($this->getConfiguration(), 1));
     $result = parent::filter($entity);
 
     if (!$result) {
@@ -85,14 +94,48 @@ class ContentpoolFilter extends EntityTypeFilter {
    *   Whether the entity has one of the given terms.
    */
   protected function entityHasOneTermOf(ContentEntityInterface $entity, $uuids, $field_name) {
-    $uuids_flipped = array_flip($uuids);
-    // @todo: Add hierarchy support.
-    foreach ($entity->get($field_name)->referencedEntities() as $term) {
-      if (isset($uuids_flipped[$term->uuid()])) {
+    $matching_ids = $this->getMatchingTermIds($uuids);
+    foreach ($entity->get($field_name) as $item) {
+      if (isset($matching_ids[$item->target_id])) {
         return TRUE;
       }
     }
     return FALSE;
+  }
+
+  /**
+   * Gets an array of term IDs that match for the given terms.
+   *
+   * Implements hierarchic matching by adding in all children of the given
+   * terms.
+   *
+   * @param string[] $term_uuids
+   *   An array term UUIDs for the terms to filter.
+   *
+   * @return string[]
+   *   An array of matching term IDs, where the keys and values are term IDs.
+   */
+  protected function getMatchingTermIds(array $term_uuids) {
+    $key = implode(':', $term_uuids);
+    if (!isset($this->matchingIds[$key])) {
+      $this->matchingIds[$key] = [];
+      $terms = $this->getEntityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(['uuid' => $term_uuids]);
+      /* @var \Drupal\taxonomy\TermInterface[] $terms */
+      foreach ($terms as $term) {
+        // Add the term itself to the results.
+        $this->matchingIds[$key][$term->id()] = $term->id();
+        // Add the children.
+        $children = $this->getEntityTypeManager()
+          ->getStorage('taxonomy_term')
+          ->loadTree($term->getVocabularyId(), $term->id(), NULL, FALSE);
+        foreach ($children as $child) {
+          $this->matchingIds[$key][$child->tid] = $child->tid;
+        }
+      }
+    }
+    return $this->matchingIds[$key];
   }
 
 }
