@@ -3,3 +3,5 @@ name: Contentpool Replication
 description: 'Replication filter for contentpool entities.'
 package: Contentpool
 core: '8.x'
+dependencies:
+  - replication:replication
