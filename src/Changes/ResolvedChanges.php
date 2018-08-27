@@ -50,7 +50,7 @@ class ResolvedChanges extends Changes {
 
       // Add additional documents based on references.
       if ($sequence['revision'] && $sequence['revision'] instanceof ContentEntityInterface) {
-        $additional_changes = $this->addEntityFieldReferences($sequence['revision'], $additional_changes);
+        $this->addEntityFieldReferences($sequence['revision'], $additional_changes);
       }
     }
 
@@ -81,11 +81,14 @@ class ResolvedChanges extends Changes {
   }
 
   /**
-   * Returns the ids of all hierarchically referenced entities.
+   * Adds (recursively) referenced entities as additional change.
    *
-   * @param $entity
+   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
+   *   The entity containing references.
+   * @param array $additional_changes
+   *   The so far additional changes.
    */
-  protected function addEntityFieldReferences(ContentEntityInterface $entity, $additional_changes) {
+  protected function addEntityFieldReferences(ContentEntityInterface $entity, array &$additional_changes) {
     // We filter certain base fields.
     $prohibited_field_ids = ['type', 'uid', 'revision_uid', 'vid', 'parent'];
     $field_definitions = array_filter($entity->getFieldDefinitions(), function($key) use ($prohibited_field_ids) {
@@ -94,34 +97,24 @@ class ResolvedChanges extends Changes {
 
     foreach ($field_definitions as $key => $field_definition) {
       if ($field_definition->getType() == 'entity_reference') {
-        if (!$entity->{$key}->isEmpty()) {
-          // Add the referenced entity itself.
-          $referenced_entity_id = $entity->{$key}->target_id;
+        // Add the referenced entities itself.
+        foreach ($entity->{$key}->referencedEntities() as $referenced_entity) {
+          /* @var EntityInterface $referenced_entity */
 
-          if (array_key_exists($referenced_entity_id, $additional_changes)) {
-            // We already resolved the entity in another field.
+          // Only add it if it's not already added.
+          if (isset($additional_changes[$referenced_entity->getEntityTypeId()][$referenced_entity->id()])) {
             continue;
           }
 
-          // Determine if the referenced entity has to be checked too.
-          /** @var EntityInterface $target_entity */
-          $target_entity = $entity->{$key}->entity;
-          $target_entity_type = $target_entity->getEntityType();
-          if (!$target_entity) {
-            continue;
-          }
-
-          // If the target entity type is fieldable we have to check it.
-          if ($target_entity_type->entityClassImplements("\Drupal\Core\Entity\ContentEntityInterface")) {
+          // If the target entity type is fieldable we have to check it too.
+          if ($referenced_entity instanceof ContentEntityInterface) {
             // We only add entry if entity available.
-            $additional_changes[$target_entity_type->id()][$referenced_entity_id] = $target_entity;
-            $additional_changes = $this->addEntityFieldReferences($target_entity, $additional_changes);
+            $additional_changes[$referenced_entity->getEntityTypeId()][$referenced_entity->id()] = $referenced_entity;
+            $this->addEntityFieldReferences($referenced_entity, $additional_changes);
           }
         }
       }
     }
-
-    return $additional_changes;
   }
 
 }
