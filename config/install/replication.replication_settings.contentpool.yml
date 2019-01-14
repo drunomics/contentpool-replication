@@ -6,5 +6,7 @@ label: Replicate contentpool entities
 filter_id: contentpool
 parameters:
   types:
-    - node.article
     - taxonomy_term.channel
+  filtered_types:
+    - node.article
+  filter: []

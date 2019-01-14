@@ -16,8 +16,12 @@ use Drupal\replication\Plugin\ReplicationFilter\EntityTypeFilter;
  * @ReplicationFilter(
  *   id = "contentpool",
  *   label = @Translation("Filter by types required for contentpool"),
- *   description = @Translation("Replicate only entities that match the contentpool data model.")
+ *   description = @Translation("Replicate only entities that match the
+ *   contentpool data model.")
  * )
+ *
+ * This class supports the ReplicationFilterValueProviderInterface but does
+ * not implement it to avoid a dependency on multiversion_sequence_filter.
  */
 class ContentpoolFilter extends EntityTypeFilter {
 
@@ -35,18 +39,19 @@ class ContentpoolFilter extends EntityTypeFilter {
    */
   public function defaultConfiguration() {
     return [
-      // An array of entity types to replicate, filtered by below filters.
-      // Referenced entities are added-in automatically.
+      // An array of entity types and bundles to replicate - all entities.
+      // e.g. "taxonomy_term.channel"
       'types' => [],
-      // An array with additional filter by term-reference field. First level
-      // keys are "entity-type:bundle" and with a nested array of field filter
-      // values, keyed by field name and with possible term UUIDs as values.
+      // An array of entity types and bundles to replicate when filters match.
+      // e.g. "node.article"
+      'filtered_types' => [],
+      // An array with additional filter by term-reference field to apply for
+      // all entities matching the 'types' filter.
+      // Entries are keyed by field name and contain multiple term UUIDs.
       // E.g.:
-      // "node:article" => [
-      //    "field_channel" => [
-      //       "5f84eca9-b623-46a7-8579-ca5532585823",
-      //       "02c8cbd9-15b7-4231-b9ef-46c1ef37b233",
-      //    ],
+      // "field_channel" => [
+      //   "5f84eca9-b623-46a7-8579-ca5532585823",
+      //   "02c8cbd9-15b7-4231-b9ef-46c1ef37b233",
       // ],
       // At least one filters must match for an entity to be replicated (OR),
       // while for each field at least one term must match (OR).
@@ -55,9 +60,71 @@ class ContentpoolFilter extends EntityTypeFilter {
   }
 
   /**
+   * Implements \Drupal\multiversion_sequence_filter\ReplicationFilterValueProviderInterface::providesFilterValues().
+   */
+  public function providesFilterValues() {
+    return TRUE;
+  }
+
+  /**
+   * Implements \Drupal\multiversion_sequence_filter\ReplicationFilterValueProviderInterface::getUnfilteredTypes().
+   */
+  public function getUnfilteredTypes() {
+    $config = $this->getConfiguration();
+    return $config['types'];
+  }
+
+  /**
+   * Implements \Drupal\multiversion_sequence_filter\ReplicationFilterValueProviderInterface::providesFilterValues().
+   */
+  public function getFilteredTypes() {
+    $config = $this->getConfiguration();
+    return $config['filtered_types'];
+  }
+
+  /**
+   * Implements \Drupal\multiversion_sequence_filter\ReplicationFilterValueProviderInterface::deriveFilterValues().
+   *
+   * We provide filter values in the form of { field_name }:{ term_id }.
+   */
+  public function deriveFilterValues(EntityInterface $entity) {
+    if (!$entity instanceof ContentEntityInterface) {
+      return [];
+    }
+    $values = [];
+    foreach ($entity->getFieldDefinitions() as $field_name => $definition) {
+      if ($definition->getType() != 'entity_reference' || $definition->getFieldStorageDefinition()
+        ->getSetting('target_type') != 'taxonomy_term') {
+        continue;
+      }
+      foreach ($entity->get($field_name) as $item) {
+        if ($item->target_id) {
+          $values[] = $field_name . ':' . $item->target_id;
+        }
+      }
+    }
+    return $values;
+  }
+
+  /**
+   * Implements \Drupal\multiversion_sequence_filter\ReplicationFilterValueProviderInterface::getFilterValues().
+   */
+  public function getFilterValues() {
+    $config = $this->getConfiguration();
+    $values = [];
+    foreach ($config['filter'] as $field_name => $uuids) {
+      foreach ($this->getMatchingTermIds($uuids) as $term_id) {
+        $values[] = $field_name . ':' . $term_id;
+      }
+    }
+    return $values;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function filter(EntityInterface $entity) {
+    // This method is used without multiversion_sequence_filter only.
     $result = parent::filter($entity);
 
     if (!$result) {
@@ -66,41 +133,12 @@ class ContentpoolFilter extends EntityTypeFilter {
 
     // Continue filtering if we have defined filters.
     $config = $this->getConfiguration();
-    $key = $entity->getEntityTypeId() . ':' . $entity->bundle();
-    if (empty($config['filter'][$key])) {
+    if (empty($config['filter'])) {
       return TRUE;
     }
 
-    // Check all filters and return TRUE as soon as one matches.
-    foreach ($config['filter'][$key] as $field_name => $uuids) {
-      if ($this->entityHasOneTermOf($entity, $uuids, $field_name)) {
-        return TRUE;
-      }
-    }
-    return FALSE;
-  }
-
-  /**
-   * Determines whether the entity has one of the given terms.
-   *
-   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
-   *   The entity to check.
-   * @param string[] $uuids
-   *   The UUIDs of the terms to check for.
-   * @param $field_name
-   *   The name of the term referenced field to use for checking.
-   *
-   * @return bool
-   *   Whether the entity has one of the given terms.
-   */
-  protected function entityHasOneTermOf(ContentEntityInterface $entity, $uuids, $field_name) {
-    $matching_ids = $this->getMatchingTermIds($uuids);
-    foreach ($entity->get($field_name) as $item) {
-      if (isset($matching_ids[$item->target_id])) {
-        return TRUE;
-      }
-    }
-    return FALSE;
+    // Return true if a configured filter value can be found.
+    return (bool) array_intersect($this->deriveFilterValues($entity), $this->getConfiguredFilterValues());
   }
 
   /**
@@ -109,19 +147,22 @@ class ContentpoolFilter extends EntityTypeFilter {
    * Implements hierarchic matching by adding in all children of the given
    * terms.
    *
-   * @param string[] $term_uuids
+   * @param int[] $uuids
    *   An array term UUIDs for the terms to filter.
    *
    * @return string[]
    *   An array of matching term IDs, where the keys and values are term IDs.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
-  protected function getMatchingTermIds(array $term_uuids) {
-    $key = implode(':', $term_uuids);
+  protected function getMatchingTermIds(array $uuids) {
+    $key = implode(':', $uuids);
     if (!isset($this->matchingIds[$key])) {
       $this->matchingIds[$key] = [];
       $terms = $this->getEntityTypeManager()
         ->getStorage('taxonomy_term')
-        ->loadByProperties(['uuid' => $term_uuids]);
+        ->loadByProperties(['uuid' => $uuids]);
       /* @var \Drupal\taxonomy\TermInterface[] $terms */
       foreach ($terms as $term) {
         // Add the term itself to the results.
