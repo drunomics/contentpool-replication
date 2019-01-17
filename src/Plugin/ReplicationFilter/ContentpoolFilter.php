@@ -125,20 +125,34 @@ class ContentpoolFilter extends EntityTypeFilter {
    */
   public function filter(EntityInterface $entity) {
     // This method is used without multiversion_sequence_filter only.
-    $result = parent::filter($entity);
+    $config = $this->getConfiguration();
+    // Replicate the matching logic of
+    // \Drupal\multiversion_sequence_filter\FilteredSequenceIndex here, i.e.
+    // add a trailing point for being able to match with substrings.
+    $type = "{$entity->getEntityTypeId()}.{$entity->bundle()}" . '.';
 
-    if (!$result) {
+    foreach ($config['types'] as $possible_type) {
+      if (strpos($type, $possible_type . '.') === 0) {
+        return TRUE;
+      }
+    }
+
+    // If no type matches, a filtered type must match so we can check filters.
+    $match = FALSE;
+    foreach ($config['filtered_types'] as $possible_type) {
+      if (strpos($type, $possible_type . '.') === 0) {
+        $match = TRUE;
+        break;
+      }
+    }
+
+    if ($match) {
+      // Return true if a configured filter value can be found.
+      return (bool) array_intersect($this->deriveFilterValues($entity), $this->getFilterValues());
+    }
+    else {
       return FALSE;
     }
-
-    // Continue filtering if we have defined filters.
-    $config = $this->getConfiguration();
-    if (empty($config['filter'])) {
-      return TRUE;
-    }
-
-    // Return true if a configured filter value can be found.
-    return (bool) array_intersect($this->deriveFilterValues($entity), $this->getConfiguredFilterValues());
   }
 
   /**
