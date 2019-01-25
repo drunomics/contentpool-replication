@@ -21,7 +21,11 @@
     },
     "patches": {
       "drupal/replication": {
-        "#2989572: Refactor Changes class to be more modular": "https://www.drupal.org/files/issues/2018-07-31/refactor-changes-2989572-2.patch"
+        "#2989572: Refactor Changes class to be more modular": "https://www.drupal.org/files/issues/2018-07-31/refactor-changes-2989572-2.patch",
+        "#3028318: Bulk updater does not respected deleted flag of documents": "https://www.drupal.org/files/issues/2019-01-25/enforce-deletion.patch"
+      },
+      "relaxedws/replicator": {
+        "Ensure changes marked as deleted are propagated as such. #13 - https://github.com/relaxedws/couchdb-replicator/pull/13": "https://patch-diff.githubusercontent.com/raw/relaxedws/couchdb-replicator/pull/13.patch"
       }
     }
   },
