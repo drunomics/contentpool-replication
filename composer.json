@@ -31,7 +31,7 @@
   },
   "require": {
     "drunomics/service-utils": "*",
-    "drupal/replication": "^1.0@beta"
+    "drupal/replication": "1.0.0-beta18"
   },
   "require-dev": {
   }
