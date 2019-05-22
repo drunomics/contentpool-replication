@@ -177,6 +177,9 @@ class ContentpoolFilter extends EntityTypeFilter {
       $terms = $this->getEntityTypeManager()
         ->getStorage('taxonomy_term')
         ->loadByProperties(['uuid' => $uuids]);
+      if (count($uuids) != count($terms)) {
+        throw new \InvalidArgumentException("Invalid filter values given.");
+      }
       /* @var \Drupal\taxonomy\TermInterface[] $terms */
       foreach ($terms as $term) {
         // Add the term itself to the results.
