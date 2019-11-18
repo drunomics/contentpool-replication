@@ -178,7 +178,14 @@ class ContentpoolFilter extends EntityTypeFilter {
         ->getStorage('taxonomy_term')
         ->loadByProperties(['uuid' => $uuids]);
       if (count($uuids) != count($terms)) {
-        throw new \InvalidArgumentException("Invalid filter values given.");
+        $not_found = $uuids;
+        // Detect not found items.
+        foreach ($terms as $term) {
+          if (($key = array_search($term->uuid(), $not_found)) !== FALSE) {
+            unset($not_found[$key]);
+          }
+        }
+        throw new \InvalidArgumentException("Invalid filter values given. Terms with uuid " . implode(', ', $not_found) . " were selected but not found.");
       }
       /* @var \Drupal\taxonomy\TermInterface[] $terms */
       foreach ($terms as $term) {
